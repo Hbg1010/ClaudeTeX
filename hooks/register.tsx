@@ -44,7 +44,7 @@ function svgFor(tex: string): Typeset {
 export const register: Register = on => {
   on('prompt.compose', async ($, e, next) => {
     const { sections } = await next(e)
-    return { sections: [...sections, { id: 'claudetex-math', text: NUDGE, scope: 'session' as const }] }
+    return { sections: [...sections, { id: 'claudetex:math', text: NUDGE, scope: 'session' as const }] }
   })
 
   on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {

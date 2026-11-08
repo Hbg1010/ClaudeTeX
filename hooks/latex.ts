@@ -1376,7 +1376,7 @@ function math(s: string): string {
 // "s^{1/4}", "n^2", "x_i", "O_{r}(1)". An unbraced subscript needs a one-letter
 // base and one character, so snake_case names and file_names stay as written.
 const BARE =
-  /((?<![\\\w$^/.@-])(?:[A-Za-z]+|\d+)|\))((?:\^(?:\{[^{}\n]{1,60}\}|\d+|[A-Za-z])|_(?:\{[^{}\n]{1,60}\}|[A-Za-z0-9]))+)(?![\w{^_])/g
+  /((?<![\\\w$^/.@-])(?:[A-Za-z]+|\d+)|\))((?:\^(?:\{[^{}\n]{1,60}\}|\([^()\n]{1,40}\)|\d+|[A-Za-z])|_(?:\{[^{}\n]{1,60}\}|[A-Za-z0-9]))+)(?![\w{^_])/g
 const BARE_PART = /([\^_])(\{[^{}\n]*\}|[A-Za-z0-9]+)/g
 
 function bare(s: string): string {
@@ -1385,8 +1385,13 @@ function bare(s: string): string {
     for (const [, mark, body] of scripts.matchAll(BARE_PART)) {
       if (mark === '_' && !body!.startsWith('{') && base.length > 1 && base !== ')') return m
     }
+    // s^(1/4) is ASCII math for s^{1/4}. A parenthesised power with no digit,
+    // as in f^(n), is often a derivative, so it stays as written, as does one
+    // with no superscript form.
+    const tex = m.replace(/\^\(([^()\n]*)\)/g, '^{$1}')
+    if (tex !== m && /\^\(/.test(m) && [...m.matchAll(/\^\(([^()\n]*)\)/g)].some(p => !/\d/.test(p[1]!) || toScript(p[1]!.replace(/-/g, '−'), SUP) === null)) return m
     try {
-      const out = texToLines(m, false).join(' ').trim()
+      const out = texToLines(tex, false).join(' ').trim()
       return out && out !== m ? esc(out) : m
     } catch {
       return m

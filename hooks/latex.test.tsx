@@ -108,8 +108,26 @@ test('bare superscripts and subscripts in prose are converted', () => {
   expect(renderMath('about s^{1/4}, and O_r(delta^2), 2^{10}, x_{ij}, (a+b)^2')).toBe(
     'about s¹ᐟ⁴, and Oᵣ(delta²), 2¹⁰, xᵢⱼ, (a+b)²',
   )
+  expect(renderMath('s^(1/4) beats log s, and n^(-1) too')).toBe('s¹ᐟ⁴ beats log s, and n⁻¹ too')
+  expect(renderMath('f^(x + y) and f^(n) and 2^(n-1)')).toBe('f^(x + y) and f^(n) and 2ⁿ⁻¹')
   const names = 'snake_case, file_name.py, my_var_2, __init__, https://x.com/v_2/page, [^1]'
   expect(renderMath(names)).toBe(names)
+})
+
+test('the system prompt gains a section asking for $…$ math', async ($, on) => {
+  // Stands for the engine's own composition.
+  on('prompt.compose', () => ({ sections: [{ id: 'intro', text: 'core prompt', scope: 'shared' as const }] }))
+
+  const { sections } = await $.prompt.compose({
+    model: 'claude-opus-5-5',
+    promptModel: 'claude-opus-5-5',
+    surfaces: ['desktop'],
+    tools: [],
+    outputStyle: null,
+    traits: [],
+  })
+  expect(sections.map(s => s.id)).toEqual(['intro', 'claudetex:math'])
+  expect(sections[1]?.text).toContain('inside dollar signs')
 })
 
 test('code is left alone', () => {
