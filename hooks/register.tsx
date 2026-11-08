@@ -65,11 +65,11 @@ export const register: Register = on => {
       return unicode()
     }
 
-    const { Box, Markdown, Svg } = $.ui.resolve(e)
+    const { Box, Button, Markdown, Svg } = $.ui.resolve(e)
 
     return (
       <Box flexDirection="column">
-        {parts.map(p => {
+        {parts.map((p, k) => {
           if ('md' in p) {
             return <Markdown text={p.md} />
           }
@@ -78,9 +78,21 @@ export const register: Register = on => {
             const fence = p.fallback.length > 1
             return <Markdown text={fence ? '```\n' + p.fallback.join('\n') + '\n```' : p.fallback[0]!} />
           }
+          // An image can't be selected as text, so each equation carries a
+          // button that copies its LaTeX.
+          const tex = '$$' + p.tex.trim() + '$$'
           return (
-            <Box marginY={1} alignItems="center">
+            <Box marginY={1} flexDirection="row" justifyContent="center" alignItems="center">
               <Svg source={math.source} alt={p.tex} width={math.width} height={math.height} />
+              <Box marginLeft={2}>
+                <Button
+                  key={`copy-${k}`}
+                  label="Copy"
+                  plain
+                  dimColor
+                  onPress={press => void $.ui.copy({ text: tex, surface: press.surface })}
+                />
+              </Box>
             </Box>
           )
         })}

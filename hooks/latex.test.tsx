@@ -60,6 +60,20 @@ test('display math is a typeset SVG on desktop, vscode and mobile', async ($, on
   }
 })
 
+test('the copy button beside an equation copies its LaTeX', async ($, on) => {
+  const copied: string[] = []
+  // Stands for the engine's clipboard.
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+
+  const ui = await $.ui.mount({ ...reply('So\n$$E = mc^2$$\ndone.'), surface: 'desktop' })
+  await ui.press({ key: 'copy-1' })
+  expect(copied).toEqual(['$$E = mc^2$$'])
+  await ui.unmount()
+})
+
 test('the terminal keeps the Unicode drawing of display math', async ($, on) => {
   on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
