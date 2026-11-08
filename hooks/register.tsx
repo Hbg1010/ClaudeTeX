@@ -88,20 +88,24 @@ function withSource(key: string, img: RenderNode, tex: string, t: GuiTable) {
   return (
     <Box key={key} position="relative">
       {img}
+      {/* A transparent area from two rows above the formula to its bottom edge:
+          the pointer on it counts as on the formula, so the card stays open
+          while the pointer moves up onto it. */}
       <Box
         position="absolute"
         top={-2}
+        bottom={0}
         left={0}
         display="none"
         hover={{ display: 'flex' }}
-        borderStyle="round"
-        borderColor="promptBorder"
-        backgroundColor="inverseText"
-        paddingX={1}
+        flexDirection="column"
+        alignItems="flex-start"
       >
-        <Text mono color="text" size="caption">
-          {tex.trim()}
-        </Text>
+        <Box borderStyle="round" borderColor="promptBorder" backgroundColor="inverseText" paddingX={1}>
+          <Text mono color="text" size="caption">
+            {tex.trim()}
+          </Text>
+        </Box>
       </Box>
     </Box>
   )
