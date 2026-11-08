@@ -1,4 +1,4 @@
-import type { ElementTable, Register } from 'claude-code'
+import type { ElementTable, Register, RenderNode } from 'claude-code'
 
 import { breakLines } from './breaks'
 import { renderMath, splitMath } from './latex'
@@ -28,8 +28,6 @@ const TEXT_MIDDLE = 300
 
 type Typeset = { source: string; width: number; height: number } | null
 const typeset = new Map<string, Typeset>()
-
-const xml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
 function measure(tex: string): number | null {
   try {
@@ -67,8 +65,7 @@ function svgFor(tex: string, display = true): Typeset {
     let svg = r.svg
     let height = r.height * ex * scale
     if (!display) ({ svg, height } = centreOnText(svg, height))
-    // The title is the hover tooltip: the formula's LaTeX.
-    const source = svg.replace(/^<svg([^>]*)>/, (open: string) => open + STYLE + '<title>' + xml(tex) + '</title>')
+    const source = svg.replace(/^<svg([^>]*)>/, (open: string) => open + STYLE)
     if (source.length <= 131072) {
       out = { source, width: Math.round(r.width * ex * scale), height: Math.round(height) }
     }
@@ -82,16 +79,32 @@ function svgFor(tex: string, display = true): Typeset {
 
 type GuiTable = ElementTable<'desktop' | 'vscode' | 'mobile'>
 
+// A typeset formula that shows its LaTeX on a card above it while the pointer
+// is over it: the surface's own hover reveal, no frame and no hook.
+function withSource(key: string, img: RenderNode, tex: string, t: GuiTable) {
+  const { Box, Text } = t
+  return (
+    <Box key={key} position="relative">
+      {img}
+      <Box position="absolute" top={-1} left={0} display="none" hover={{ display: 'flex' }}>
+        <Text inverse mono>
+          {NBSP + tex.trim() + NBSP}
+        </Text>
+      </Box>
+    </Box>
+  )
+}
+
 // A paragraph, list item or heading whose inline math plain text can't draw:
 // a wrapping row of words, each formula a small typeset image beside them.
 function richParagraph(b: RichBlock, k: number, t: GuiTable) {
   const { Box, Link, Svg, Text } = t
-  const items = b.runs.map(r => {
+  const items = b.runs.map((r, j) => {
     const gap = r.spaceAfter ? NBSP : ''
     if (r.kind === 'math') {
       const m = svgFor(r.tex, false)
       if (!m) return <Text>{r.text + gap}</Text>
-      const img = <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} isInteractive />
+      const img = withSource(`m-${k}-${j}`, <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} />, r.tex, t)
       return gap ? (
         <Box flexDirection="row" alignItems="center">
           {img}
@@ -179,7 +192,12 @@ export const register: Register = on => {
           const tex = '$$' + p.tex.trim() + '$$'
           return (
             <Box marginY={1} flexDirection="row" justifyContent="center" alignItems="center">
-              <Svg source={math.source} alt={p.tex} width={math.width} height={math.height} isInteractive />
+              {withSource(
+                `eq-${k}`,
+                <Svg source={math.source} alt={p.tex} width={math.width} height={math.height} />,
+                p.tex,
+                table,
+              )}
               <Box marginLeft={2}>
                 <Button
                   key={`copy-${k}`}

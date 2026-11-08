@@ -94,7 +94,7 @@ test('a paragraph whose inline math Unicode cannot draw is laid out with typeset
   await ui.unmount()
 })
 
-test('a long display equation is broken into lines that fit, with its LaTeX as the tooltip', async ($, on) => {
+test('a long display equation is broken into lines that fit, with its LaTeX on a hover card', async ($, on) => {
   on('ui.render', () => {
     throw new Error('the engine is not reached')
   })
@@ -106,8 +106,8 @@ test('a long display equation is broken into lines that fit, with its LaTeX as t
   expect(svg?.props.width).toBeLessThanOrEqual(680)
   // Shrinking it to fit would leave it under a third of the usual height.
   expect(svg?.props.height).toBeGreaterThan(40)
-  expect(svg?.props.source).toContain('<title>S = a_{1} + a_{2}')
-  expect(svg?.props.isInteractive).toBe(true)
+  // Its LaTeX waits on a hover card.
+  expect((await ui.find({ type: 'Text', text: /^.S = a_\{1\} \+ a_\{2\}/ }))?.props.inverse).toBe(true)
   await ui.unmount()
 })
 
