@@ -88,12 +88,15 @@ function withSource(key: string, img: RenderNode, tex: string, t: GuiTable) {
   return (
     <Box key={key} position="relative">
       {img}
-      {/* A transparent area from two rows above the formula to its bottom edge:
-          the pointer on it counts as on the formula, so the card stays open
-          while the pointer moves up onto it. */}
+      {/* A transparent area from above the formula to its bottom edge: the
+          pointer on it counts as on the formula, so the card stays open while
+          the pointer moves up onto it. With no z-order to set, the card is
+          painted under whatever comes after it, so it sits clear of the
+          formula's own line (a desktop row is shorter than the card) and
+          covers only what came before. */}
       <Box
         position="absolute"
-        top={-2}
+        top={-3}
         bottom={0}
         left={0}
         display="none"
