@@ -1,0 +1,13 @@
+{
+  "name": "claudetex",
+  "owner": {
+    "name": "Hbg1010"
+  },
+  "description": "ClaudeTeX: LaTeX math in Claude Code replies, typeset with MathJax.",
+  "plugins": [
+    {
+      "name": "claudetex",
+      "source": "./"
+    }
+  ]
+}
