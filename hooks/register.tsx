@@ -79,16 +79,26 @@ function svgFor(tex: string, display = true): Typeset {
 
 type GuiTable = ElementTable<'desktop' | 'vscode' | 'mobile'>
 
-// A typeset formula that shows its LaTeX on a card above it while the pointer
-// is over it: the surface's own hover reveal, no frame and no hook.
+// A typeset formula that shows its LaTeX as a quiet label above it while the
+// pointer is over it: the surface's own hover reveal, no frame and no hook.
+// The label sits on the reply's own background (the theme's inverseText), in
+// small dim monospace.
 function withSource(key: string, img: RenderNode, tex: string, t: GuiTable) {
   const { Box, Text } = t
   return (
     <Box key={key} position="relative">
       {img}
-      <Box position="absolute" top={-1} left={0} display="none" hover={{ display: 'flex' }}>
-        <Text inverse mono>
-          {NBSP + tex.trim() + NBSP}
+      <Box
+        position="absolute"
+        top={-1}
+        left={0}
+        display="none"
+        hover={{ display: 'flex' }}
+        backgroundColor="inverseText"
+        paddingX={1}
+      >
+        <Text mono dimColor size="caption">
+          {tex.trim()}
         </Text>
       </Box>
     </Box>
