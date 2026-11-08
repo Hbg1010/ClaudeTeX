@@ -79,10 +79,10 @@ function svgFor(tex: string, display = true): Typeset {
 
 type GuiTable = ElementTable<'desktop' | 'vscode' | 'mobile'>
 
-// A typeset formula that shows its LaTeX as a quiet label above it while the
-// pointer is over it: the surface's own hover reveal, no frame and no hook.
-// The label sits on the reply's own background (the theme's inverseText), in
-// small dim monospace.
+// A typeset formula that shows its LaTeX on a card above it while the pointer
+// is over it: the surface's own hover reveal, no frame and no hook. The card
+// is drawn in Claude Code's own theme colours, as its prompt box is: a rounded
+// border in promptBorder on the reply's background, the LaTeX in small mono.
 function withSource(key: string, img: RenderNode, tex: string, t: GuiTable) {
   const { Box, Text } = t
   return (
@@ -90,14 +90,16 @@ function withSource(key: string, img: RenderNode, tex: string, t: GuiTable) {
       {img}
       <Box
         position="absolute"
-        top={-1}
+        top={-2}
         left={0}
         display="none"
         hover={{ display: 'flex' }}
+        borderStyle="round"
+        borderColor="promptBorder"
         backgroundColor="inverseText"
         paddingX={1}
       >
-        <Text mono dimColor size="caption">
+        <Text mono color="text" size="caption">
           {tex.trim()}
         </Text>
       </Box>

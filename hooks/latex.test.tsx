@@ -107,7 +107,7 @@ test('a long display equation is broken into lines that fit, with its LaTeX on a
   // Shrinking it to fit would leave it under a third of the usual height.
   expect(svg?.props.height).toBeGreaterThan(40)
   // Its LaTeX waits on a hover card.
-  expect((await ui.find({ type: 'Text', text: /^S = a_\{1\} \+ a_\{2\}/ }))?.props.dimColor).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^S = a_\{1\} \+ a_\{2\}/ }))?.props.mono).toBe(true)
   await ui.unmount()
 })
 
