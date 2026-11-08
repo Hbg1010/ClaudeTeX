@@ -1,4 +1,5 @@
-import type { ElementTable, Register, RenderNode } from 'claude-code'
+import { atom, read, update } from 'claude-code'
+import type { ElementTable, Register } from 'claude-code'
 
 import { breakLines } from './breaks'
 import { renderMath, splitMath } from './latex'
@@ -79,40 +80,8 @@ function svgFor(tex: string, display = true): Typeset {
 
 type GuiTable = ElementTable<'desktop' | 'vscode' | 'mobile'>
 
-// A typeset formula that shows its LaTeX on a card above it while the pointer
-// is over it: the surface's own hover reveal, no frame and no hook. The card
-// is drawn in Claude Code's own theme colours, as its prompt box is: a rounded
-// border in promptBorder on the reply's background, the LaTeX in small mono.
-function withSource(key: string, img: RenderNode, tex: string, t: GuiTable) {
-  const { Box, Text } = t
-  return (
-    <Box key={key} position="relative">
-      {img}
-      {/* A transparent area from above the formula to its bottom edge: the
-          pointer on it counts as on the formula, so the card stays open while
-          the pointer moves up onto it. With no z-order to set, the card is
-          painted under whatever comes after it, so it sits clear of the
-          formula's own line (a desktop row is shorter than the card) and
-          covers only what came before. */}
-      <Box
-        position="absolute"
-        top={-3}
-        bottom={0}
-        left={0}
-        display="none"
-        hover={{ display: 'flex' }}
-        flexDirection="column"
-        alignItems="flex-start"
-      >
-        <Box borderStyle="round" borderColor="promptBorder" backgroundColor="inverseText" paddingX={1}>
-          <Text mono color="text" size="caption">
-            {tex.trim()}
-          </Text>
-        </Box>
-      </Box>
-    </Box>
-  )
-}
+// Display equations whose LaTeX is open below them, by message and part.
+const shownTex = atom({ plugin: 'claudetex', key: 'shownTex' } as const, [] as string[])
 
 // A paragraph, list item or heading whose inline math plain text can't draw:
 // a wrapping row of words, each formula a small typeset image beside them.
@@ -123,7 +92,7 @@ function richParagraph(b: RichBlock, k: number, t: GuiTable) {
     if (r.kind === 'math') {
       const m = svgFor(r.tex, false)
       if (!m) return <Text>{r.text + gap}</Text>
-      const img = withSource(`m-${k}-${j}`, <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} />, r.tex, t)
+      const img = <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} />
       return gap ? (
         <Box flexDirection="row" alignItems="center">
           {img}
@@ -173,7 +142,7 @@ export const register: Register = on => {
     return { ...r, blocks: [...r.blocks, { name: 'mathFormatting', text: NUDGE }] }
   })
 
-  on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     // Math italic needs a proportional font; the terminal keeps letters upright.
     const unicode = () => {
       const text = renderMath(e.props.text, { italic: e.surface !== 'terminal' })
@@ -190,7 +159,8 @@ export const register: Register = on => {
     }
 
     const table = $.ui.resolve(e)
-    const { Box, Button, Markdown, Svg } = table
+    const { Box, Button, Markdown, Svg, Text } = table
+    const open = await read($, shownTex)
 
     return (
       <Box flexDirection="column">
@@ -207,25 +177,45 @@ export const register: Register = on => {
             return <Markdown text={fence ? '```\n' + p.fallback.join('\n') + '\n```' : p.fallback[0]!} />
           }
           // An image can't be selected as text, so each equation carries a
-          // button that copies its LaTeX.
+          // button that copies its LaTeX and one that shows it below, in the
+          // reply's flow where it covers nothing, in Claude Code's own colours.
           const tex = '$$' + p.tex.trim() + '$$'
+          const id = e.requestId + ':' + k
+          const isOpen = open.includes(id)
           return (
-            <Box marginY={1} flexDirection="row" justifyContent="center" alignItems="center">
-              {withSource(
-                `eq-${k}`,
-                <Svg source={math.source} alt={p.tex} width={math.width} height={math.height} />,
-                p.tex,
-                table,
-              )}
-              <Box marginLeft={2}>
-                <Button
-                  key={`copy-${k}`}
-                  label="Copy"
-                  plain
-                  dimColor
-                  onPress={press => void $.ui.copy({ text: tex, surface: press.surface })}
-                />
+            <Box key={`eq-${k}`} marginY={1} flexDirection="column" alignItems="center">
+              <Box flexDirection="row" justifyContent="center" alignItems="center">
+                <Svg source={math.source} alt={p.tex} width={math.width} height={math.height} />
+                <Box marginLeft={2} flexDirection="row">
+                  <Button
+                    key={`copy-${k}`}
+                    label="Copy"
+                    plain
+                    dimColor
+                    onPress={press => void $.ui.copy({ text: tex, surface: press.surface })}
+                  />
+                  <Box marginLeft={1}>
+                    <Button
+                      key={`tex-${k}`}
+                      label={isOpen ? 'Hide TeX' : 'TeX'}
+                      plain
+                      dimColor
+                      onPress={() =>
+                        void update($, shownTex, list =>
+                          list.includes(id) ? list.filter(x => x !== id) : [...list, id].slice(-200),
+                        )
+                      }
+                    />
+                  </Box>
+                </Box>
               </Box>
+              {isOpen && (
+                <Box marginTop={1} borderStyle="round" borderColor="promptBorder" paddingX={1}>
+                  <Text mono size="caption">
+                    {p.tex.trim()}
+                  </Text>
+                </Box>
+              )}
             </Box>
           )
         })}

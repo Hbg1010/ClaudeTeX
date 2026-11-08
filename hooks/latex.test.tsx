@@ -94,7 +94,7 @@ test('a paragraph whose inline math Unicode cannot draw is laid out with typeset
   await ui.unmount()
 })
 
-test('a long display equation is broken into lines that fit, with its LaTeX on a hover card', async ($, on) => {
+test('a long display equation is broken into lines that fit', async ($, on) => {
   on('ui.render', () => {
     throw new Error('the engine is not reached')
   })
@@ -106,8 +106,6 @@ test('a long display equation is broken into lines that fit, with its LaTeX on a
   expect(svg?.props.width).toBeLessThanOrEqual(680)
   // Shrinking it to fit would leave it under a third of the usual height.
   expect(svg?.props.height).toBeGreaterThan(40)
-  // Its LaTeX waits on a hover card.
-  expect((await ui.find({ type: 'Text', text: /^S = a_\{1\} \+ a_\{2\}/ }))?.props.mono).toBe(true)
   await ui.unmount()
 })
 
@@ -122,6 +120,19 @@ test('an inline formula is centred on the middle of the text line', async ($, on
     const [minY, h] = [Number(vb[2]), Number(vb[4])]
     expect(Math.round(minY + h / 2)).toBe(-300)
   }
+  await ui.unmount()
+})
+
+test('the TeX button shows an equation\'s LaTeX below it, and hides it again', async ($, on) => {
+  const ui = await $.ui.mount({ ...reply('So\n$$E = mc^2$$\ndone.'), surface: 'desktop' })
+  expect(await ui.find({ type: 'Text', text: 'E = mc^2' })).toBeUndefined()
+
+  await ui.press({ key: 'tex-1' })
+  expect((await ui.find({ type: 'Text', text: 'E = mc^2' }))?.props.mono).toBe(true)
+  expect((await ui.find({ type: 'Button', key: 'tex-1' }))?.props.label).toBe('Hide TeX')
+
+  await ui.press({ key: 'tex-1' })
+  expect(await ui.find({ type: 'Text', text: 'E = mc^2' })).toBeUndefined()
   await ui.unmount()
 })
 
