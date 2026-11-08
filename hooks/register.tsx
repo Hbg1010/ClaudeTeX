@@ -1,11 +1,15 @@
-import type { Register } from 'claude-code'
+import type { ElementTable, Register } from 'claude-code'
 
 import { renderMath, splitMath } from './latex'
 import { texToSvg } from './mathjax/mathjax-svg.js'
+import type { RichBlock } from './rich'
 
-// Pixels per ex of the math, and the widest a formula is drawn before it is scaled down.
+// Pixels per ex of the math (display, and inline beside body text), and the
+// widest a formula is drawn before it is scaled down.
 const EX = 8
+const INLINE_EX = 7.5
 const MAX_WIDTH = 680
+const NBSP = '\u00a0'
 
 // SVG drawn as an image paints `currentColor` black; this follows the light or dark scheme.
 const STYLE = '<style>svg{color:#1f1f1f}@media (prefers-color-scheme: dark){svg{color:#ececec}}</style>'
@@ -18,23 +22,74 @@ const NUDGE = `This interface renders LaTeX math in your replies. Write every ma
 type Typeset = { source: string; width: number; height: number } | null
 const typeset = new Map<string, Typeset>()
 
-function svgFor(tex: string): Typeset {
-  const hit = typeset.get(tex)
+function svgFor(tex: string, display = true): Typeset {
+  const key = (display ? 'D' : 'I') + tex
+  const hit = typeset.get(key)
   if (hit !== undefined) return hit
   let out: Typeset = null
   try {
-    const r = texToSvg(tex, true)
-    const scale = r.width * EX > MAX_WIDTH ? MAX_WIDTH / (r.width * EX) : 1
+    const r = texToSvg(tex, display)
+    const ex = display ? EX : INLINE_EX
+    const scale = r.width * ex > MAX_WIDTH ? MAX_WIDTH / (r.width * ex) : 1
     const source = r.svg.replace(/^<svg([^>]*)>/, (open: string) => open + STYLE)
     if (source.length <= 131072) {
-      out = { source, width: Math.round(r.width * EX * scale), height: Math.round(r.height * EX * scale) }
+      out = { source, width: Math.round(r.width * ex * scale), height: Math.round(r.height * ex * scale) }
     }
   } catch {
     out = null
   }
   if (typeset.size > 500) typeset.clear()
-  typeset.set(tex, out)
+  typeset.set(key, out)
   return out
+}
+
+type GuiTable = ElementTable<'desktop' | 'vscode' | 'mobile'>
+
+// A paragraph, list item or heading whose inline math plain text can't draw:
+// a wrapping row of words, each formula a small typeset image beside them.
+function richParagraph(b: RichBlock, k: number, t: GuiTable) {
+  const { Box, Link, Svg, Text } = t
+  const items = b.runs.map(r => {
+    const gap = r.spaceAfter ? NBSP : ''
+    if (r.kind === 'math') {
+      const m = svgFor(r.tex, false)
+      if (!m) return <Text>{r.text + gap}</Text>
+      const img = <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} />
+      return gap ? (
+        <Box flexDirection="row" alignItems="center">
+          {img}
+          <Text>{gap}</Text>
+        </Box>
+      ) : (
+        img
+      )
+    }
+    if (r.href) {
+      return (
+        <Box flexDirection="row">
+          <Link href={r.href} label={r.text} />
+          <Text>{gap}</Text>
+        </Box>
+      )
+    }
+    return (
+      <Text bold={r.bold || b.heading} italic={r.italic} mono={r.code}>
+        {r.text + gap}
+      </Text>
+    )
+  })
+  const body = (
+    <Box flexDirection="row" flexWrap="wrap" alignItems="center" flexShrink={1}>
+      {items}
+    </Box>
+  )
+  if (!b.marker) return <Box key={`p-${k}`} marginY="sm">{body}</Box>
+  return (
+    <Box key={`p-${k}`} flexDirection="row" marginY="xs">
+      <Text>{b.marker + NBSP + NBSP}</Text>
+      {body}
+    </Box>
+  )
 }
 
 // Rewrites each assistant reply block before the surface draws it. On the
@@ -61,17 +116,21 @@ export const register: Register = on => {
     }
 
     const parts = splitMath(e.props.text)
-    if (!parts.some(p => 'tex' in p)) {
+    if (!parts.some(p => 'tex' in p || 'rich' in p)) {
       return unicode()
     }
 
-    const { Box, Button, Markdown, Svg } = $.ui.resolve(e)
+    const table = $.ui.resolve(e)
+    const { Box, Button, Markdown, Svg } = table
 
     return (
       <Box flexDirection="column">
         {parts.map((p, k) => {
           if ('md' in p) {
             return <Markdown text={p.md} />
+          }
+          if ('rich' in p) {
+            return richParagraph(p.rich, k, table)
           }
           const math = svgFor(p.tex)
           if (!math) {

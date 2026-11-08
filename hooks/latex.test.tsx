@@ -74,6 +74,26 @@ test('the copy button beside an equation copies its LaTeX', async ($, on) => {
   await ui.unmount()
 })
 
+test('a paragraph whose inline math Unicode cannot draw is laid out with typeset formulas', async ($, on) => {
+  on('ui.render', () => {
+    throw new Error('the engine is not reached')
+  })
+
+  const ui = await $.ui.mount({
+    ...reply('Clean $x_i$ stays text.\n\n- **Energy.** Fix $t$; the support of $\\sum [F_a + F_b]$ over pairs.'),
+    surface: 'desktop',
+  })
+  // The first paragraph is markdown with Unicode math.
+  expect((await ui.find({ type: 'Markdown' }))?.text).toBe('Clean 𝑥ᵢ stays text.')
+  // The list item is laid out: every formula in it typeset, words as text.
+  const svgs = await ui.findAll({ type: 'Svg' })
+  expect(svgs.map(x => x.props.alt)).toEqual(['t', '\\sum [F_a + F_b]'])
+  expect(svgs[1]?.props.source).toContain('<svg')
+  expect((await ui.find({ type: 'Text', text: /^Energy\./ }))?.props.bold).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /^pairs\.$/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('the terminal keeps the Unicode drawing of display math', async ($, on) => {
   on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
     const { Text } = $.ui.resolve(e)

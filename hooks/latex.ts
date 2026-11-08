@@ -5,6 +5,8 @@
 // fractions, matrices, cases, limits under ∑) and, when it needs more than one
 // line, set in a code fence so its columns line up.
 
+import { mark, segment, type InlineMath, type RichBlock } from './rich'
+
 type Kind = 'ord' | 'op' | 'bin' | 'rel' | 'open' | 'close' | 'punct' | 'inner' | 'space'
 type Box = { lines: string[]; base: number }
 type Atom = { kind: Kind; box: Box; limits?: boolean }
@@ -1344,6 +1346,10 @@ function math(s: string): string {
     if (!lines) return false
     out += bare(s.slice(last, start))
     if (display) out = placeDisplay(out, s, start, end, last, lines, body)
+    else if (inlineFound) {
+      const text = lines[0]!
+      out += mark(inlineFound.push({ tex: body, text, md: esc(text), clean: inlineClean(body) }) - 1)
+    }
     else out += esc(lines[0]!)
     last = end
     return true
@@ -1534,9 +1540,22 @@ function transform(md: string): string {
 }
 
 /** A run of markdown, or one display formula: its TeX and its Unicode lines. */
-export type Part = { md: string } | { tex: string; fallback: string[] }
+export type Part = { md: string } | { tex: string; fallback: string[] } | { rich: RichBlock }
 
 let collected: { tex: string; fallback: string[] }[] | null = null
+// Inline formulas plain text can't draw cleanly, left for the mod to typeset.
+let inlineFound: InlineMath[] | null = null
+
+/** Whether an inline formula's Unicode has every script in Unicode and no unknown command. */
+function inlineClean(tex: string): boolean {
+  try {
+    const p = new Parser(lex(tex), false)
+    const out = flat(p.top())
+    return !p.subFailed && !p.supFailed && !out.includes('\\')
+  } catch {
+    return false
+  }
+}
 // Whether inline math sets its variables in math italic: on surfaces with a
 // proportional font, not on the terminal, where those letters can misalign.
 let italicMode = false
@@ -1552,12 +1571,15 @@ export function splitMath(md: string): Part[] {
   const hit = splitCache.get(md)
   if (hit) return hit
   const found: { tex: string; fallback: string[] }[] = []
+  const inlines: InlineMath[] = []
   collected = found
+  inlineFound = inlines
   let out: string
   try {
     out = transform(md)
   } finally {
     collected = null
+    inlineFound = null
     italicMode = false
   }
   const parts: Part[] = []
@@ -1569,7 +1591,7 @@ export function splitMath(md: string): Part[] {
       return
     }
     const text = piece.replace(/^(?:[ \t>]*\n)+/, '').replace(/(?:\n[ \t>]*)+$/, '')
-    if (text.replace(/[\s>]/g, '') !== '') parts.push({ md: text })
+    if (text.replace(/[\s>]/g, '') !== '') parts.push(...segment(text, inlines))
   })
   if (splitCache.size > 300) splitCache.clear()
   splitCache.set(md, parts)
