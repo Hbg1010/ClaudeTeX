@@ -471,8 +471,9 @@ function pairs(s: string): Map<string, string> {
 }
 const SUP = pairs(
   '0⁰1¹2²3³4⁴5⁵6⁶7⁷8⁸9⁹+⁺−⁻-⁻=⁼(⁽)⁾aᵃbᵇcᶜdᵈeᵉfᶠgᵍhʰiⁱjʲkᵏlˡmᵐnⁿoᵒpᵖrʳsˢtᵗuᵘvᵛwʷxˣyʸzᶻ' +
-    'AᴬBᴮDᴰEᴱGᴳHᴴIᴵJᴶKᴷLᴸMᴹNᴺOᴼPᴾRᴿTᵀUᵁVⱽWᵂαᵅβᵝγᵞδᵟεᵋϵᵋθᶿιᶥφᵠϕᵠχᵡ∘°°°⊤ᵀ′′″″‴‴††‡‡∗**',
+    'AᴬBᴮDᴰEᴱGᴳHᴴIᴵJᴶKᴷLᴸMᴹNᴺOᴼPᴾRᴿTᵀUᵁVⱽWᵂαᵅβᵝγᵞδᵟεᵋϵᵋθᶿιᶥφᵠϕᵠχᵡ∘°°°⊤ᵀ′′″″‴‴††‡‡',
 )
+SUP.set('∗', '*').set('*', '*').set('/', 'ᐟ')
 const SUB = pairs('0₀1₁2₂3₃4₄5₅6₆7₇8₈9₉+₊−₋-₋=₌(₍)₎aₐeₑhₕiᵢjⱼkₖlₗmₘnₙoₒpₚrᵣsₛtₜuᵤvᵥxₓβᵦγᵧρᵨφᵩϕᵩχᵪ')
 
 function toScript(s: string, map: Map<string, string>): string | null {
@@ -1295,7 +1296,7 @@ function nextDollar(s: string, from: number): number {
 }
 
 function math(s: string): string {
-  if (!s.includes('$') && !s.includes('\\')) return s
+  if (!s.includes('$') && !s.includes('\\')) return bare(s)
   let out = ''
   let last = 0
   let i = 0
@@ -1303,7 +1304,7 @@ function math(s: string): string {
   const emit = (start: number, end: number, body: string, display: boolean): boolean => {
     const lines = convert(body, display)
     if (!lines) return false
-    out += s.slice(last, start)
+    out += bare(s.slice(last, start))
     if (display) out = placeDisplay(out, s, start, end, last, lines, body)
     else out += esc(lines[0]!)
     last = end
@@ -1368,7 +1369,29 @@ function math(s: string): string {
     }
     i++
   }
-  return out + s.slice(last)
+  return out + bare(s.slice(last))
+}
+
+// Superscripts and subscripts written in prose with no $…$ around them, as in
+// "s^{1/4}", "n^2", "x_i", "O_{r}(1)". An unbraced subscript needs a one-letter
+// base and one character, so snake_case names and file_names stay as written.
+const BARE =
+  /((?<![\\\w$^/.@-])(?:[A-Za-z]+|\d+)|\))((?:\^(?:\{[^{}\n]{1,60}\}|\d+|[A-Za-z])|_(?:\{[^{}\n]{1,60}\}|[A-Za-z0-9]))+)(?![\w{^_])/g
+const BARE_PART = /([\^_])(\{[^{}\n]*\}|[A-Za-z0-9]+)/g
+
+function bare(s: string): string {
+  if (!s.includes('^') && !s.includes('_')) return s
+  return s.replace(BARE, (m: string, base: string, scripts: string) => {
+    for (const [, mark, body] of scripts.matchAll(BARE_PART)) {
+      if (mark === '_' && !body!.startsWith('{') && base.length > 1 && base !== ')') return m
+    }
+    try {
+      const out = texToLines(m, false).join(' ').trim()
+      return out && out !== m ? esc(out) : m
+    } catch {
+      return m
+    }
+  })
 }
 
 // Sets display math in a block of its own, keeping the list item or quote it is in.
@@ -1478,7 +1501,7 @@ const splitCache = new Map<string, Part[]>()
  * a surface that draws a formula as an image between blocks of markdown.
  */
 export function splitMath(md: string): Part[] {
-  if (!md.includes('$') && !md.includes('\\')) return [{ md }]
+  if (!/[$\\^_]/.test(md)) return [{ md }]
   const hit = splitCache.get(md)
   if (hit) return hit
   const found: { tex: string; fallback: string[] }[] = []
@@ -1509,7 +1532,7 @@ const cache = new Map<string, string>()
 
 /** The markdown with every LaTeX math span in its prose drawn as Unicode. */
 export function renderMath(md: string): string {
-  if (!md.includes('$') && !md.includes('\\')) return md
+  if (!/[$\\^_]/.test(md)) return md
   const hit = cache.get(md)
   if (hit !== undefined) return hit
   const out = transform(md)

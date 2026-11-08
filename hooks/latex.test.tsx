@@ -104,6 +104,14 @@ test('display math is typeset in two dimensions inside a fence', () => {
   )
 })
 
+test('bare superscripts and subscripts in prose are converted', () => {
+  expect(renderMath('about s^{1/4}, and O_r(delta^2), 2^{10}, x_{ij}, (a+b)^2')).toBe(
+    'about s¹ᐟ⁴, and Oᵣ(delta²), 2¹⁰, xᵢⱼ, (a+b)²',
+  )
+  const names = 'snake_case, file_name.py, my_var_2, __init__, https://x.com/v_2/page, [^1]'
+  expect(renderMath(names)).toBe(names)
+})
+
 test('code is left alone', () => {
   const md = '```tex\n$\\alpha$\n```\nand `$\\beta$`'
   expect(renderMath(md)).toBe(md)

@@ -10,6 +10,10 @@ const MAX_WIDTH = 680
 // SVG drawn as an image paints `currentColor` black; this follows the light or dark scheme.
 const STYLE = '<style>svg{color:#1f1f1f}@media (prefers-color-scheme: dark){svg{color:#ececec}}</style>'
 
+// Added to the system prompt, so Claude marks math where this mod can find it.
+const NUDGE = `# Math formatting
+This interface renders LaTeX math in your replies. Write every mathematical expression in LaTeX inside dollar signs: inline math as $...$ (for example $s^{1/4}$ or $O_r(\\delta^2)$) and displayed equations as $$...$$ on lines of their own. Do not write bare TeX such as s^{1/4} or ad hoc forms such as sqrt(delta) in prose. Keep math out of code spans and code blocks unless it is literally code.`
+
 type Typeset = { source: string; width: number; height: number } | null
 const typeset = new Map<string, Typeset>()
 
@@ -38,6 +42,11 @@ function svgFor(tex: string): Typeset {
 // math, and everything on the terminal, becomes Unicode. The stored message is
 // untouched, so ctrl+o still shows the raw LaTeX.
 export const register: Register = on => {
+  on('prompt.compose', async ($, e, next) => {
+    const { sections } = await next(e)
+    return { sections: [...sections, { id: 'claudetex-math', text: NUDGE, scope: 'session' as const }] }
+  })
+
   on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
     const unicode = () => {
       const text = renderMath(e.props.text)
