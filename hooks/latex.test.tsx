@@ -94,6 +94,37 @@ test('a paragraph whose inline math Unicode cannot draw is laid out with typeset
   await ui.unmount()
 })
 
+test('a long display equation is broken into lines that fit, with its LaTeX as the tooltip', async ($, on) => {
+  on('ui.render', () => {
+    throw new Error('the engine is not reached')
+  })
+
+  const sum = Array.from({ length: 24 }, (_, i) => `a_{${i + 1}}`).join(' + ')
+  const ui = await $.ui.mount({ ...reply('$$S = ' + sum + '$$'), surface: 'desktop' })
+  const svg = await ui.find({ type: 'Svg' })
+  expect(svg?.props.alt).toBe('S = ' + sum)
+  expect(svg?.props.width).toBeLessThanOrEqual(680)
+  // Shrinking it to fit would leave it under a third of the usual height.
+  expect(svg?.props.height).toBeGreaterThan(40)
+  expect(svg?.props.source).toContain('<title>S = a_{1} + a_{2}')
+  expect(svg?.props.isInteractive).toBe(true)
+  await ui.unmount()
+})
+
+test('an inline formula is centred on the middle of the text line', async ($, on) => {
+  on('ui.render', () => {
+    throw new Error('the engine is not reached')
+  })
+
+  const ui = await $.ui.mount({ ...reply('Deep $x_{ij}$ and $F_b$ here.'), surface: 'desktop' })
+  for (const svg of await ui.findAll({ type: 'Svg' })) {
+    const vb = /viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"/.exec(String(svg.props.source))!
+    const [minY, h] = [Number(vb[2]), Number(vb[4])]
+    expect(Math.round(minY + h / 2)).toBe(-300)
+  }
+  await ui.unmount()
+})
+
 test('the terminal keeps the Unicode drawing of display math', async ($, on) => {
   on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
     const { Text } = $.ui.resolve(e)

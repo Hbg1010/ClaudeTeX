@@ -1,5 +1,6 @@
 import type { ElementTable, Register } from 'claude-code'
 
+import { breakLines } from './breaks'
 import { renderMath, splitMath } from './latex'
 import { texToSvg } from './mathjax/mathjax-svg.js'
 import type { RichBlock } from './rich'
@@ -19,8 +20,38 @@ const STYLE = '<style>svg{color:#1f1f1f}@media (prefers-color-scheme: dark){svg{
 // find it.
 const NUDGE = `This interface renders LaTeX math in your replies. Write every mathematical expression in LaTeX inside dollar signs: inline math as $...$ (for example $s^{1/4}$ or $O_r(\\delta^2)$) and displayed equations as $$...$$ on lines of their own. Do not write bare TeX such as s^{1/4} or ad hoc forms such as sqrt(delta) in prose. Keep math out of code spans and code blocks unless it is literally code.`
 
+// Where the middle of a line of body text sits above its baseline, in
+// thousandths of the math's em (MathJax's viewBox unit). An inline formula is
+// padded so this height is its centre: a row centring it beside text then
+// puts its baseline on theirs.
+const TEXT_MIDDLE = 300
+
 type Typeset = { source: string; width: number; height: number } | null
 const typeset = new Map<string, Typeset>()
+
+const xml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+function measure(tex: string): number | null {
+  try {
+    return texToSvg(tex, true).width * EX
+  } catch {
+    return null
+  }
+}
+
+// Pads an inline formula's viewBox so the text middle is its vertical centre.
+function centreOnText(svg: string, heightPx: number): { svg: string; height: number } {
+  const vb = /viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"/.exec(svg)
+  if (!vb) return { svg, height: heightPx }
+  const [x, minY, w, h] = vb.slice(1).map(Number) as [number, number, number, number]
+  const centre = -TEXT_MIDDLE
+  const half = Math.max(centre - minY, minY + h - centre, 1)
+  const perUnit = heightPx / h
+  return {
+    svg: svg.replace(vb[0], `viewBox="${x} ${centre - half} ${w} ${2 * half}"`),
+    height: 2 * half * perUnit,
+  }
+}
 
 function svgFor(tex: string, display = true): Typeset {
   const key = (display ? 'D' : 'I') + tex
@@ -28,12 +59,18 @@ function svgFor(tex: string, display = true): Typeset {
   if (hit !== undefined) return hit
   let out: Typeset = null
   try {
-    const r = texToSvg(tex, display)
+    // A display equation too wide for the reply is broken into lines first.
+    const set = (display && breakLines(tex, MAX_WIDTH, measure)) || tex
+    const r = texToSvg(set, display)
     const ex = display ? EX : INLINE_EX
     const scale = r.width * ex > MAX_WIDTH ? MAX_WIDTH / (r.width * ex) : 1
-    const source = r.svg.replace(/^<svg([^>]*)>/, (open: string) => open + STYLE)
+    let svg = r.svg
+    let height = r.height * ex * scale
+    if (!display) ({ svg, height } = centreOnText(svg, height))
+    // The title is the hover tooltip: the formula's LaTeX.
+    const source = svg.replace(/^<svg([^>]*)>/, (open: string) => open + STYLE + '<title>' + xml(tex) + '</title>')
     if (source.length <= 131072) {
-      out = { source, width: Math.round(r.width * ex * scale), height: Math.round(r.height * ex * scale) }
+      out = { source, width: Math.round(r.width * ex * scale), height: Math.round(height) }
     }
   } catch {
     out = null
@@ -54,7 +91,7 @@ function richParagraph(b: RichBlock, k: number, t: GuiTable) {
     if (r.kind === 'math') {
       const m = svgFor(r.tex, false)
       if (!m) return <Text>{r.text + gap}</Text>
-      const img = <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} />
+      const img = <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} isInteractive />
       return gap ? (
         <Box flexDirection="row" alignItems="center">
           {img}
@@ -142,7 +179,7 @@ export const register: Register = on => {
           const tex = '$$' + p.tex.trim() + '$$'
           return (
             <Box marginY={1} flexDirection="row" justifyContent="center" alignItems="center">
-              <Svg source={math.source} alt={p.tex} width={math.width} height={math.height} />
+              <Svg source={math.source} alt={p.tex} width={math.width} height={math.height} isInteractive />
               <Box marginLeft={2}>
                 <Button
                   key={`copy-${k}`}
