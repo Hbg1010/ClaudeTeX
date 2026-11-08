@@ -50,8 +50,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AssistantMessage' }, ($, e, next) => {
+    // Math italic needs a proportional font; the terminal keeps letters upright.
     const unicode = () => {
-      const text = renderMath(e.props.text)
+      const text = renderMath(e.props.text, { italic: e.surface !== 'terminal' })
       return text === e.props.text ? next(e) : next({ ...e, props: { ...e.props, text } })
     }
 

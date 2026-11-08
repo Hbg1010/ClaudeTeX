@@ -20,7 +20,8 @@ test('inline math becomes Unicode in the drawn reply, on every surface', async (
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...reply('So $x^2 + y^2 = z^2$ and $\\alpha \\leq \\beta_i$.'), surface })
     const row = await ui.find({ type: 'Text' })
-    expect(row?.text).toBe('So x² + y² = z² and α ≤ βᵢ.')
+    // Math italic on surfaces with a proportional font; upright on the terminal.
+    expect(row?.text).toBe(surface === 'terminal' ? 'So x² + y² = z² and α ≤ βᵢ.' : 'So 𝑥² + 𝑦² = 𝑧² and 𝛼 ≤ 𝛽ᵢ.')
     await ui.unmount()
   }
 })
@@ -54,7 +55,7 @@ test('display math is a typeset SVG on desktop, vscode and mobile', async ($, on
     expect(svg?.props.source).toContain('<svg')
     expect(svg?.props.alt).toBe('x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}')
     const after = await ui.find({ type: 'Markdown', text: /for/ })
-    expect(after?.text).toBe('for a ≠ 0.')
+    expect(after?.text).toBe('for 𝑎 ≠ 0.')
     await ui.unmount()
   }
 })
@@ -121,6 +122,15 @@ test('the conversation context gains a block asking for $…$ math', async ($, o
   const { blocks } = await $.prompt.context({ blocks: [{ name: 'currentDate', text: 'today' }] })
   expect(blocks.map(b => b.name)).toEqual(['currentDate', 'mathFormatting'])
   expect(blocks[1]?.text).toContain('inside dollar signs')
+})
+
+test('a formula writes all its subscripts one way', () => {
+  // b has no Unicode subscript, so a is written linearly too.
+  expect(texToText('F_a + F_b', false).join('')).toBe('F_a + F_b')
+  expect(texToText('F_a + F_i', false).join('')).toBe('Fₐ + Fᵢ')
+  expect(renderMath('$\\sum [F_a + F_b]$ and $\\mathbb{F}_2^{10}$', { italic: true })).toBe(
+    '∑\\[𝐹\\_a + 𝐹\\_b\\] and 𝔽₂¹⁰',
+  )
 })
 
 test('code is left alone', () => {

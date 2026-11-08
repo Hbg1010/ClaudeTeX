@@ -692,10 +692,30 @@ class Parser {
 
   private readonly toks: Tok[]
   private display: boolean
+  // Letters drawn in math italic (𝑥), as TeX sets a variable.
+  private italic: boolean
+  // A subscript or superscript with no Unicode form was written linearly; a
+  // second pass writes every one of that kind linearly, so a formula reads
+  // F_a + F_b rather than Fₐ + F_b.
+  subFailed = false
+  supFailed = false
+  forceLinearSub = false
+  forceLinearSup = false
 
-  constructor(toks: Tok[], display: boolean) {
+  constructor(toks: Tok[], display: boolean, italic = false) {
     this.toks = toks
     this.display = display
+    this.italic = italic
+  }
+
+  private upright<T>(f: () => T): T {
+    const it = this.italic
+    this.italic = false
+    try {
+      return f()
+    } finally {
+      this.italic = it
+    }
   }
 
   private peek(): Tok | undefined {
@@ -728,7 +748,7 @@ class Parser {
   }
 
   private script<T>(f: () => T): T {
-    return this.mode(false, true, f)
+    return this.upright(() => this.mode(false, true, f))
   }
 
   top(): Box {
@@ -856,8 +876,12 @@ class Parser {
       if (sub !== null) parts.push(txt(sub))
       return { kind: a.kind, box: vstack(parts, bi) }
     }
-    const su = sup === null ? '' : toScript(sup, SUP)
-    const sb = sub === null ? '' : toScript(sub, SUB)
+    let su = sup === null ? '' : toScript(sup, SUP)
+    let sb = sub === null ? '' : toScript(sub, SUB)
+    if (su === null) this.supFailed = true
+    if (sb === null) this.subFailed = true
+    if (sup !== null && this.forceLinearSup) su = null
+    if (sub !== null && this.forceLinearSub) sb = null
     if (su !== null && sb !== null) return { kind: a.kind, box: hcat([box, txt(sb + su)]) }
     if (this.display && (box.lines.length > 1 || a.kind === 'op')) {
       const h = box.lines.length
@@ -975,19 +999,26 @@ class Parser {
       case "'":
         return { kind: 'ord', box: txt('′') }
       default:
-        return { kind: CHAR_KIND.get(c) ?? 'ord', box: txt(c) }
+        return {
+          kind: CHAR_KIND.get(c) ?? 'ord',
+          box: txt(this.italic && /^[A-Za-z]$/.test(c) ? mapFont(c, FONT.it!) : c),
+        }
     }
   }
 
   private fontArg(font: string): Atom {
-    const a = this.arg()
+    const a = this.upright(() => this.arg())
     const f = FONT[font] ?? {}
     return { kind: a.kind === 'op' ? 'op' : 'ord', box: { lines: a.box.lines.map(l => mapFont(l, f)), base: a.box.base } }
   }
 
   private command(n: string): Atom | null {
     const s = SYM[n]
-    if (s) return { kind: s[0], box: txt(s[1]), ...(LIMITS.has(n) ? { limits: true } : {}) }
+    if (s) {
+      const cp = s[1].codePointAt(0)!
+      const glyph = this.italic && s[0] === 'ord' && s[1].length === 1 && cp >= 0x3b1 && cp <= 0x3c9 ? mapFont(s[1], FONT.it!) : s[1]
+      return { kind: s[0], box: txt(glyph), ...(LIMITS.has(n) ? { limits: true } : {}) }
+    }
     const space = SPACES[n]
     if (space !== undefined) return sp(space)
     const f = FUNCS[n]
@@ -1256,8 +1287,15 @@ class Parser {
   }
 }
 
-function texToLines(src: string, display: boolean): string[] {
-  const box = new Parser(lex(src), display).top()
+function texToLines(src: string, display: boolean, italic = false): string[] {
+  const first = new Parser(lex(src), display, italic)
+  let box = first.top()
+  if (first.subFailed || first.supFailed) {
+    const again = new Parser(lex(src), display, italic)
+    again.forceLinearSub = first.subFailed
+    again.forceLinearSup = first.supFailed
+    box = again.top()
+  }
   return box.lines.map(l => l.replace(/[  ]+$/, ''))
 }
 
@@ -1269,7 +1307,7 @@ const esc = (s: string): string => s.replace(/[\\`*_[\]<>|~#$]/g, '\\$&')
 function convert(body: string, display: boolean): string[] | null {
   if (!body.trim() || body.length > 20000) return null
   try {
-    let lines = texToLines(body, display)
+    let lines = texToLines(body, display, italicMode && !display)
     if (!display || lines.length === 1) lines = [lines.map(l => l.trim()).join(' ')]
     while (lines.length > 1 && !lines[0]!.trim()) lines.shift()
     while (lines.length > 1 && !lines[lines.length - 1]!.trim()) lines.pop()
@@ -1391,7 +1429,7 @@ function bare(s: string): string {
     const tex = m.replace(/\^\(([^()\n]*)\)/g, '^{$1}')
     if (tex !== m && /\^\(/.test(m) && [...m.matchAll(/\^\(([^()\n]*)\)/g)].some(p => !/\d/.test(p[1]!) || toScript(p[1]!.replace(/-/g, '−'), SUP) === null)) return m
     try {
-      const out = texToLines(tex, false).join(' ').trim()
+      const out = texToLines(tex, false, italicMode && /^[A-Za-z]$/.test(base)).join(' ').trim()
       return out && out !== m ? esc(out) : m
     } catch {
       return m
@@ -1499,6 +1537,9 @@ function transform(md: string): string {
 export type Part = { md: string } | { tex: string; fallback: string[] }
 
 let collected: { tex: string; fallback: string[] }[] | null = null
+// Whether inline math sets its variables in math italic: on surfaces with a
+// proportional font, not on the terminal, where those letters can misalign.
+let italicMode = false
 const splitCache = new Map<string, Part[]>()
 
 /**
@@ -1507,6 +1548,7 @@ const splitCache = new Map<string, Part[]>()
  */
 export function splitMath(md: string): Part[] {
   if (!/[$\\^_]/.test(md)) return [{ md }]
+  italicMode = true
   const hit = splitCache.get(md)
   if (hit) return hit
   const found: { tex: string; fallback: string[] }[] = []
@@ -1516,6 +1558,7 @@ export function splitMath(md: string): Part[] {
     out = transform(md)
   } finally {
     collected = null
+    italicMode = false
   }
   const parts: Part[] = []
   const pieces = out.split(/\uE100(\d+)\uE101/)
@@ -1535,14 +1578,25 @@ export function splitMath(md: string): Part[] {
 
 const cache = new Map<string, string>()
 
-/** The markdown with every LaTeX math span in its prose drawn as Unicode. */
-export function renderMath(md: string): string {
+/**
+ * The markdown with every LaTeX math span in its prose drawn as Unicode;
+ * `italic` sets inline variables in math italic.
+ */
+export function renderMath(md: string, opts: { italic?: boolean } = {}): string {
   if (!/[$\\^_]/.test(md)) return md
-  const hit = cache.get(md)
+  const italic = opts.italic === true
+  const key = (italic ? 'i' : 'u') + md
+  const hit = cache.get(key)
   if (hit !== undefined) return hit
-  const out = transform(md)
+  italicMode = italic
+  let out: string
+  try {
+    out = transform(md)
+  } finally {
+    italicMode = false
+  }
   if (cache.size > 300) cache.clear()
-  cache.set(md, out)
+  cache.set(key, out)
   return out
 }
 

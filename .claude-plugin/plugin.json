@@ -1,5 +1,5 @@
 {
   "name": "claudetex",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Typesets the LaTeX math in Claude's replies: display equations as real MathJax SVG in the desktop app, inline math and the terminal as Unicode."
 }
