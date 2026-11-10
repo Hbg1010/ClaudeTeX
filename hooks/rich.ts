@@ -10,11 +10,15 @@
 export type InlineMath = { tex: string; text: string; md: string; clean: boolean }
 
 export type Run =
-  | { kind: 'text'; text: string; bold: boolean; italic: boolean; code: boolean; href?: string; spaceAfter: boolean }
+  | { kind: 'text'; text: string; bold: boolean; italic: boolean; strike: boolean; code: boolean; href?: string; spaceAfter: boolean }
   | { kind: 'math'; tex: string; text: string; spaceAfter: boolean }
 
-/** A paragraph, list item or heading the mod lays out itself. */
-export type RichBlock = { marker: string | null; heading: boolean; runs: Run[] }
+/**
+ * A paragraph, list item or heading the mod lays out itself: its list marker,
+ * heading level (0 for none), nesting depth (list levels), and whether it is
+ * quoted.
+ */
+export type RichBlock = { marker: string | null; heading: number; depth: number; quote: boolean; runs: Run[] }
 
 export type Align = 'l' | 'c' | 'r'
 
@@ -103,23 +107,29 @@ function tableBlock(body: string[], inline: readonly InlineMath[]): TableBlock {
 }
 
 function richBlock(body: string[], inline: readonly InlineMath[]): RichBlock {
+  const quote = /^\s*>/.test(body[0] ?? '')
   const unquoted = body.map(l => l.replace(/^\s*(?:>\s?)*/, ''))
   let first = unquoted[0] ?? ''
   let marker: string | null = null
-  let heading = false
+  let heading = 0
+  let depth = 0
   const item = LIST.exec(first)
   if (item) {
-    marker = /^\d/.test(item[1]!) ? item[1]! : '•'
+    // Nested items are indented by two spaces (bullets) or three (numbers) a level.
+    const raw = quote ? (body[0] ?? '').replace(/^\s*(?:>\s?)+/, '') : (body[0] ?? '')
+    const spaces = /^\s*/.exec(raw)![0].replace(/\t/g, '    ').length
+    depth = Math.floor(spaces / 2)
+    marker = /^\d/.test(item[1]!) ? item[1]! : depth % 3 === 1 ? '◦' : depth % 3 === 2 ? '▪' : '•'
     first = first.slice(item[0].length)
   } else if (HEADING.test(first)) {
-    heading = true
+    heading = /#+/.exec(first)![0].length
     first = first.replace(HEADING, '')
   }
   const text = [first, ...unquoted.slice(1)].map(l => l.trim()).join(' ')
-  return { marker, heading, runs: parseInline(text, inline) }
+  return { marker, heading, depth, quote, runs: parseInline(text, inline) }
 }
 
-type Piece = { text: string; bold: boolean; italic: boolean; code: boolean; href?: string } | InlineMath
+type Piece = { text: string; bold: boolean; italic: boolean; strike: boolean; code: boolean; href?: string } | InlineMath
 
 const isWord = (c: string | undefined): boolean => c !== undefined && /[\p{L}\p{N}]/u.test(c)
 
@@ -128,9 +138,10 @@ export function parseInline(s: string, inline: readonly InlineMath[]): Run[] {
   const pieces: Piece[] = []
   let bold = false
   let italic = false
+  let strike = false
   let buf = ''
   const flush = (): void => {
-    if (buf) pieces.push({ text: buf, bold, italic, code: false })
+    if (buf) pieces.push({ text: buf, bold, italic, strike, code: false })
     buf = ''
   }
 
@@ -157,10 +168,16 @@ export function parseInline(s: string, inline: readonly InlineMath[]): Run[] {
       const close = s.indexOf('`'.repeat(n), i + n)
       if (close > 0) {
         flush()
-        pieces.push({ text: s.slice(i + n, close).trim(), bold, italic, code: true })
+        pieces.push({ text: s.slice(i + n, close).trim(), bold, italic, strike, code: true })
         i = close + n
         continue
       }
+    }
+    if (c === '~' && s[i + 1] === '~') {
+      flush()
+      strike = !strike
+      i += 2
+      continue
     }
     if ((c === '*' || c === '_') && s[i + 1] === c) {
       flush()
@@ -184,7 +201,7 @@ export function parseInline(s: string, inline: readonly InlineMath[]): Run[] {
       const m = /^\[([^\]]*)\]\(([^)\s]+)\)/.exec(s.slice(i))
       if (m) {
         flush()
-        pieces.push({ text: m[1]!, bold, italic, code: false, href: m[2]! })
+        pieces.push({ text: m[1]!, bold, italic, strike, code: false, href: m[2]! })
         i += m[0].length
         continue
       }
@@ -206,13 +223,13 @@ export function parseInline(s: string, inline: readonly InlineMath[]): Run[] {
     }
     if (p.code || p.href) {
       if (/^\s/.test(p.text)) space()
-      runs.push({ kind: 'text', text: p.text.trim(), bold: p.bold, italic: p.italic, code: p.code, href: p.href, spaceAfter: /\s$/.test(p.text) })
+      runs.push({ kind: 'text', text: p.text.trim(), bold: p.bold, italic: p.italic, strike: p.strike, code: p.code, href: p.href, spaceAfter: /\s$/.test(p.text) })
       continue
     }
     for (const part of p.text.split(/(\s+)/)) {
       if (part === '') continue
       if (/^\s+$/.test(part)) space()
-      else runs.push({ kind: 'text', text: part, bold: p.bold, italic: p.italic, code: false, spaceAfter: false })
+      else runs.push({ kind: 'text', text: part, bold: p.bold, italic: p.italic, strike: p.strike, code: false, spaceAfter: false })
     }
   }
   return runs

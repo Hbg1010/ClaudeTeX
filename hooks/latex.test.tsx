@@ -166,6 +166,34 @@ test('a table with math Unicode cannot draw is drawn with typeset cells', async 
   await ui.unmount()
 })
 
+test('laid-out headings, nested items, quotes and strikethrough keep their formatting', async ($, on) => {
+  on('ui.render', () => {
+    throw new Error('the engine is not reached')
+  })
+
+  const md = [
+    '## Bound on $F_b$',
+    '',
+    '- top item with $F_b$',
+    '  - nested item with $R_b$',
+    '',
+    '> quoted $F_b$ remark',
+    '',
+    'a ~~wrong~~ claim about $F_b$',
+  ].join('\n')
+  const ui = await $.ui.mount({ ...reply(md), surface: 'desktop' })
+  const bound = await ui.find({ type: 'Text', text: /^Bound/ })
+  expect(bound?.props.size).toBe('heading')
+  expect(bound?.props.bold).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^◦/ }))?.text).toBe('◦\u00a0\u00a0')
+  expect((await ui.find({ type: 'Text', text: /^wrong/ }))?.props.strikethrough).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^quoted/ }))?.props.size).toBe('body')
+  // Formulas in the heading are drawn larger than in body text.
+  const [inHeading, inBody] = await ui.findAll({ type: 'Svg' })
+  expect(Number(inHeading?.props.height)).toBeGreaterThan(Number(inBody?.props.height))
+  await ui.unmount()
+})
+
 test('the terminal keeps the Unicode drawing of display math', async ($, on) => {
   on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
     const { Text } = $.ui.resolve(e)

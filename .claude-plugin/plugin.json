@@ -1,6 +1,7 @@
 {
   "name": "claudetex",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Typesets the LaTeX math in Claude's replies: display equations as real MathJax SVG in the desktop app, inline math and the terminal as Unicode.",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "license": "Apache-2.0"
 }

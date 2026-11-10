@@ -52,8 +52,8 @@ function centreOnText(svg: string, heightPx: number): { svg: string; height: num
   }
 }
 
-function svgFor(tex: string, display = true): Typeset {
-  const key = (display ? 'D' : 'I') + tex
+function svgFor(tex: string, display = true, scaleBy = 1): Typeset {
+  const key = (display ? 'D' : 'I' + scaleBy) + tex
   const hit = typeset.get(key)
   if (hit !== undefined) return hit
   let out: Typeset = null
@@ -61,7 +61,7 @@ function svgFor(tex: string, display = true): Typeset {
     // A display equation too wide for the reply is broken into lines first.
     const set = (display && breakLines(tex, MAX_WIDTH, measure)) || tex
     const r = texToSvg(set, display)
-    const ex = display ? EX : INLINE_EX
+    const ex = display ? EX : INLINE_EX * scaleBy
     const scale = r.width * ex > MAX_WIDTH ? MAX_WIDTH / (r.width * ex) : 1
     let svg = r.svg
     let height = r.height * ex * scale
@@ -85,13 +85,22 @@ const shownTex = atom({ plugin: 'claudetex', key: 'shownTex' } as const, [] as s
 
 // Words and formulas as the items of a wrapping row: each word a Text, each
 // formula a small typeset image, a space kept as a no-break space after it.
-function runItems(runs: Run[], bold: boolean, t: GuiTable) {
+// Text size and the matching scale of a formula, by heading level (0: body).
+const HEADING_SIZE = [
+  { size: 'body', scale: 1 },
+  { size: 'title', scale: 1.5 },
+  { size: 'heading', scale: 1.25 },
+  { size: 'heading', scale: 1.25 },
+] as const
+
+function runItems(runs: Run[], bold: boolean, t: GuiTable, heading = 0) {
   const { Box, Link, Svg, Text } = t
+  const { size, scale } = HEADING_SIZE[heading] ?? HEADING_SIZE[0]
   return runs.map(r => {
     const gap = r.spaceAfter ? NBSP : ''
     if (r.kind === 'math') {
-      const m = svgFor(r.tex, false)
-      if (!m) return <Text>{r.text + gap}</Text>
+      const m = svgFor(r.tex, false, scale)
+      if (!m) return <Text size={size}>{r.text + gap}</Text>
       const img = <Svg source={m.source} alt={r.tex} width={m.width} height={m.height} />
       return gap ? (
         <Box flexDirection="row" alignItems="center">
@@ -111,7 +120,7 @@ function runItems(runs: Run[], bold: boolean, t: GuiTable) {
       )
     }
     return (
-      <Text bold={r.bold || bold} italic={r.italic} mono={r.code}>
+      <Text bold={r.bold || bold} italic={r.italic} strikethrough={r.strike} mono={r.code} size={size}>
         {r.text + gap}
       </Text>
     )
@@ -120,18 +129,34 @@ function runItems(runs: Run[], bold: boolean, t: GuiTable) {
 
 // A paragraph, list item or heading whose inline math plain text can't draw:
 // a wrapping row of words, each formula a small typeset image beside them.
+// A heading takes its level's size, a nested item its level's indent, and a
+// quote a bar down its left side.
 function richParagraph(b: RichBlock, k: number, t: GuiTable) {
   const { Box, Text } = t
   const body = (
     <Box flexDirection="row" flexWrap="wrap" alignItems="center" flexShrink={1}>
-      {runItems(b.runs, b.heading, t)}
+      {runItems(b.runs, b.heading > 0, t, b.heading)}
     </Box>
   )
-  if (!b.marker) return <Box key={`p-${k}`} marginY="sm">{body}</Box>
-  return (
-    <Box key={`p-${k}`} flexDirection="row" marginY="xs">
+  let block = b.marker ? (
+    <Box flexDirection="row" marginLeft={b.depth * 3}>
       <Text>{b.marker + NBSP + NBSP}</Text>
       {body}
+    </Box>
+  ) : (
+    body
+  )
+  if (b.quote) {
+    block = (
+      <Box flexDirection="row">
+        <Box width={1} backgroundColor="subtle" marginRight={2} />
+        <Box flexShrink={1}>{block}</Box>
+      </Box>
+    )
+  }
+  return (
+    <Box key={`p-${k}`} marginY={b.marker ? 'xs' : b.heading > 0 ? 'md' : 'sm'}>
+      {block}
     </Box>
   )
 }

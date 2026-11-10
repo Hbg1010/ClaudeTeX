@@ -1,0 +1,10 @@
+ClaudeTeX
+Copyright 2026 Hbg1010
+
+This product includes software developed by others, bundled in hooks/mathjax/:
+
+  MathJax 3.2.2 (https://www.mathjax.org/), Apache License 2.0,
+  see hooks/mathjax/LICENSE-MathJax.txt.
+
+  mhchemparser (https://github.com/mhchem/mhchemParser), Apache License 2.0,
+  see hooks/mathjax/LICENSE-mhchemparser.txt.
