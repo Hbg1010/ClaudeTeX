@@ -16,12 +16,19 @@ export type Run =
 /** A paragraph, list item or heading the mod lays out itself. */
 export type RichBlock = { marker: string | null; heading: boolean; runs: Run[] }
 
-export type Block = { md: string } | { rich: RichBlock }
+export type Align = 'l' | 'c' | 'r'
+
+/** A markdown table the mod draws itself, each cell's text as words and formulas. */
+export type TableBlock = { align: Align[]; header: Run[][]; rows: Run[][][] }
+
+export type Block = { md: string } | { rich: RichBlock } | { table: TableBlock }
 
 /** Where a formula left for the mod stands in the converted markdown. */
 export const mark = (n: number): string => '' + n + ''
 
 const LIST = /^\s*([-*+]|\d{1,9}[.)])\s+/
+const TABLE_ROW = /^\s*(?:>\s?)*\s*\|/
+const TABLE_SEP = /^\s*(?:>\s?)*\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\s*$/
 const HEADING = /^\s{0,3}#{1,6}\s+/
 
 /**
@@ -36,7 +43,7 @@ export function segment(md: string, inline: readonly InlineMath[]): Block[] {
   if (!unclean(md)) return [{ md: unmark(md) }]
   const lines = md.split('\n')
 
-  type Unit = { start: number; end: number }
+  type Unit = { start: number; end: number; table: boolean }
   const units: Unit[] = []
   let cur: Unit | null = null
   lines.forEach((line, k) => {
@@ -44,15 +51,27 @@ export function segment(md: string, inline: readonly InlineMath[]): Block[] {
       cur = null
       return
     }
-    const heading = HEADING.test(line.replace(/^\s*(?:>\s?)*/, ''))
-    if (cur === null || LIST.test(line.replace(/^\s*(?:>\s?)*/, '')) || heading) {
-      cur = { start: k, end: k + 1 }
+    const bare = line.replace(/^\s*(?:>\s?)*/, '')
+    // Consecutive lines that start with a pipe are one table; a table is
+    // never part of a paragraph.
+    const isRow = TABLE_ROW.test(line)
+    if (isRow && cur?.table) {
+      cur.end = k + 1
+      return
+    }
+    const heading = HEADING.test(bare)
+    if (cur === null || cur.table || isRow || LIST.test(bare) || heading) {
+      cur = { start: k, end: k + 1, table: isRow }
       units.push(cur)
       if (heading) cur = null
     } else {
       cur.end = k + 1
     }
   })
+  // A run of pipe lines with no separator row second is text, not a table.
+  for (const u of units) {
+    if (u.table && !(u.end - u.start >= 2 && TABLE_SEP.test(lines[u.start + 1]!))) u.table = false
+  }
 
   const blocks: Block[] = []
   let from = 0
@@ -64,11 +83,23 @@ export function segment(md: string, inline: readonly InlineMath[]): Block[] {
     const body = lines.slice(u.start, u.end)
     if (!unclean(body.join('\n'))) continue
     flush(u.start)
-    blocks.push({ rich: richBlock(body, inline) })
+    blocks.push(u.table ? { table: tableBlock(body, inline) } : { rich: richBlock(body, inline) })
     from = u.end
   }
   flush(lines.length)
   return blocks
+}
+
+function tableBlock(body: string[], inline: readonly InlineMath[]): TableBlock {
+  const cells = (line: string): string[] => {
+    let t = line.replace(/^\s*(?:>\s?)*/, '').trim()
+    if (t.startsWith('|')) t = t.slice(1)
+    if (t.endsWith('|') && !t.endsWith('\\|')) t = t.slice(0, -1)
+    return t.split(/(?<!\\)\|/).map(c => c.trim())
+  }
+  const align = cells(body[1]!).map((c): Align => (/^:-+:$/.test(c) ? 'c' : /-+:$/.test(c) ? 'r' : 'l'))
+  const row = (line: string): Run[][] => cells(line).map(c => parseInline(c, inline))
+  return { align, header: row(body[0]!), rows: body.slice(2).map(row) }
 }
 
 function richBlock(body: string[], inline: readonly InlineMath[]): RichBlock {

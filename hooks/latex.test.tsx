@@ -136,6 +136,36 @@ test('the TeX button shows an equation\'s LaTeX below it, and hides it again', a
   await ui.unmount()
 })
 
+test('a table whose math Unicode can draw stays a markdown table', async ($, on) => {
+  on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+
+    return <Text>{e.props.text}</Text>
+  })
+
+  const table = '| bound | before | after |\n|---|---|---|\n| exponent $7/16$ | $s^{0.49}$ | $\\tilde O(s^{7/16})$ |'
+  const ui = await $.ui.mount({ ...reply(table), surface: 'desktop' })
+  expect((await ui.find({ type: 'Text' }))?.text).toBe(
+    '| bound | before | after |\n|---|---|---|\n| exponent 7/16 | 𝑠⁰·⁴⁹ | 𝑂̃(𝑠⁷ᐟ¹⁶) |',
+  )
+  await ui.unmount()
+})
+
+test('a table with math Unicode cannot draw is drawn with typeset cells', async ($, on) => {
+  on('ui.render', () => {
+    throw new Error('the engine is not reached')
+  })
+
+  const table = '| term | value |\n|:---|---:|\n| residual $R_b$ | $\\sum_i F_b$ |\n| clean | $x^2$ |'
+  const ui = await $.ui.mount({ ...reply(table), surface: 'desktop' })
+  // Every formula in the table is typeset, the clean one too.
+  expect((await ui.findAll({ type: 'Svg' })).map(x => x.props.alt)).toEqual(['R_b', '\\sum_i F_b', 'x^2'])
+  expect((await ui.find({ type: 'Text', text: /^term/ }))?.props.bold).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^residual/ }))?.props.bold).toBeFalsy()
+  expect(await ui.find({ type: 'Markdown' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('the terminal keeps the Unicode drawing of display math', async ($, on) => {
   on('ui.render', { component: 'AssistantMessage' }, ($, e) => {
     const { Text } = $.ui.resolve(e)

@@ -5,7 +5,7 @@
 // fractions, matrices, cases, limits under ∑) and, when it needs more than one
 // line, set in a code fence so its columns line up.
 
-import { mark, segment, type InlineMath, type RichBlock } from './rich'
+import { mark, segment, type InlineMath, type RichBlock, type TableBlock } from './rich'
 
 type Kind = 'ord' | 'op' | 'bin' | 'rel' | 'open' | 'close' | 'punct' | 'inner' | 'space'
 type Box = { lines: string[]; base: number }
@@ -475,7 +475,7 @@ const SUP = pairs(
   '0⁰1¹2²3³4⁴5⁵6⁶7⁷8⁸9⁹+⁺−⁻-⁻=⁼(⁽)⁾aᵃbᵇcᶜdᵈeᵉfᶠgᵍhʰiⁱjʲkᵏlˡmᵐnⁿoᵒpᵖrʳsˢtᵗuᵘvᵛwʷxˣyʸzᶻ' +
     'AᴬBᴮDᴰEᴱGᴳHᴴIᴵJᴶKᴷLᴸMᴹNᴺOᴼPᴾRᴿTᵀUᵁVⱽWᵂαᵅβᵝγᵞδᵟεᵋϵᵋθᶿιᶥφᵠϕᵠχᵡ∘°°°⊤ᵀ′′″″‴‴††‡‡',
 )
-SUP.set('∗', '*').set('*', '*').set('/', 'ᐟ')
+SUP.set('∗', '*').set('*', '*').set('/', 'ᐟ').set('.', '·')
 const SUB = pairs('0₀1₁2₂3₃4₄5₅6₆7₇8₈9₉+₊−₋-₋=₌(₍)₎aₐeₑhₕiᵢjⱼkₖlₗmₘnₙoₒpₚrᵣsₛtₜuᵤvᵥxₓβᵦγᵧρᵨφᵩϕᵩχᵪ')
 
 function toScript(s: string, map: Map<string, string>): string | null {
@@ -1540,7 +1540,7 @@ function transform(md: string): string {
 }
 
 /** A run of markdown, or one display formula: its TeX and its Unicode lines. */
-export type Part = { md: string } | { tex: string; fallback: string[] } | { rich: RichBlock }
+export type Part = { md: string } | { tex: string; fallback: string[] } | { rich: RichBlock } | { table: TableBlock }
 
 let collected: { tex: string; fallback: string[] }[] | null = null
 // Inline formulas plain text can't draw cleanly, left for the mod to typeset.

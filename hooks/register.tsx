@@ -4,7 +4,7 @@ import type { ElementTable, Register } from 'claude-code'
 import { breakLines } from './breaks'
 import { renderMath, splitMath } from './latex'
 import { texToSvg } from './mathjax/mathjax-svg.js'
-import type { RichBlock } from './rich'
+import type { RichBlock, Run, TableBlock } from './rich'
 
 // Pixels per ex of the math (display, and inline beside body text), and the
 // widest a formula is drawn before it is scaled down.
@@ -83,11 +83,11 @@ type GuiTable = ElementTable<'desktop' | 'vscode' | 'mobile'>
 // Display equations whose LaTeX is open below them, by message and part.
 const shownTex = atom({ plugin: 'claudetex', key: 'shownTex' } as const, [] as string[])
 
-// A paragraph, list item or heading whose inline math plain text can't draw:
-// a wrapping row of words, each formula a small typeset image beside them.
-function richParagraph(b: RichBlock, k: number, t: GuiTable) {
+// Words and formulas as the items of a wrapping row: each word a Text, each
+// formula a small typeset image, a space kept as a no-break space after it.
+function runItems(runs: Run[], bold: boolean, t: GuiTable) {
   const { Box, Link, Svg, Text } = t
-  const items = b.runs.map((r, j) => {
+  return runs.map(r => {
     const gap = r.spaceAfter ? NBSP : ''
     if (r.kind === 'math') {
       const m = svgFor(r.tex, false)
@@ -111,14 +111,20 @@ function richParagraph(b: RichBlock, k: number, t: GuiTable) {
       )
     }
     return (
-      <Text bold={r.bold || b.heading} italic={r.italic} mono={r.code}>
+      <Text bold={r.bold || bold} italic={r.italic} mono={r.code}>
         {r.text + gap}
       </Text>
     )
   })
+}
+
+// A paragraph, list item or heading whose inline math plain text can't draw:
+// a wrapping row of words, each formula a small typeset image beside them.
+function richParagraph(b: RichBlock, k: number, t: GuiTable) {
+  const { Box, Text } = t
   const body = (
     <Box flexDirection="row" flexWrap="wrap" alignItems="center" flexShrink={1}>
-      {items}
+      {runItems(b.runs, b.heading, t)}
     </Box>
   )
   if (!b.marker) return <Box key={`p-${k}`} marginY="sm">{body}</Box>
@@ -126,6 +132,43 @@ function richParagraph(b: RichBlock, k: number, t: GuiTable) {
     <Box key={`p-${k}`} flexDirection="row" marginY="xs">
       <Text>{b.marker + NBSP + NBSP}</Text>
       {body}
+    </Box>
+  )
+}
+
+const JUSTIFY = { l: 'flex-start', c: 'center', r: 'flex-end' } as const
+
+// A markdown table with a formula plain text can't draw: a rounded box in
+// Claude Code's border colour, a bold header row over a rule, and each cell's
+// words and typeset formulas wrapping within a column sized to its content.
+function richTable(tb: TableBlock, k: number, t: GuiTable) {
+  const { Box, Text } = t
+  const all = [tb.header, ...tb.rows]
+  const ncols = Math.max(...all.map(r => r.length))
+  const size = (cell: Run[] | undefined): number =>
+    (cell ?? []).reduce((n, r) => n + (r.kind === 'math' ? Math.ceil(r.text.length * 1.2) : r.text.length) + 1, 0)
+  const weights = Array.from({ length: ncols }, (_, c) => Math.max(4, ...all.map(r => size(r[c]))))
+  const total = weights.reduce((a, b) => a + b, 0)
+  const row = (cells: Run[][], bold: boolean, key: string) => (
+    <Box key={key} flexDirection="row">
+      {weights.map((w, c) => (
+        <Box width={`${Math.max(1, Math.floor((100 * w) / total))}%`} paddingX={1}>
+          <Box flexDirection="row" flexWrap="wrap" alignItems="center" justifyContent={JUSTIFY[tb.align[c] ?? 'l']}>
+            {runItems(cells[c] ?? [], bold, t)}
+          </Box>
+        </Box>
+      ))}
+    </Box>
+  )
+  return (
+    <Box key={`t-${k}`} marginY="sm" flexDirection="column" borderStyle="round" borderColor="promptBorder">
+      {row(tb.header, true, 'h')}
+      <Box overflow="hidden" width="100%">
+        <Text color="promptBorder" wrap="truncate">
+          {'─'.repeat(400)}
+        </Text>
+      </Box>
+      {tb.rows.map((r, j) => row(r, false, `r-${j}`))}
     </Box>
   )
 }
@@ -154,7 +197,7 @@ export const register: Register = on => {
     }
 
     const parts = splitMath(e.props.text)
-    if (!parts.some(p => 'tex' in p || 'rich' in p)) {
+    if (!parts.some(p => 'tex' in p || 'rich' in p || 'table' in p)) {
       return unicode()
     }
 
@@ -170,6 +213,9 @@ export const register: Register = on => {
           }
           if ('rich' in p) {
             return richParagraph(p.rich, k, table)
+          }
+          if ('table' in p) {
+            return richTable(p.table, k, table)
           }
           const math = svgFor(p.tex)
           if (!math) {
